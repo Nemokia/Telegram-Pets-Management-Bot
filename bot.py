@@ -9,7 +9,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import jdatetime
 import time
 # Initialize bot
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
+BOT_TOKEN = #your bot token
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Connect to SQLite database
