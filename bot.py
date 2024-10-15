@@ -9,7 +9,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import jdatetime
 import time
 # Initialize bot
-BOT_TOKEN = #your bot token
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Connect to SQLite database
@@ -108,7 +108,7 @@ conn.commit()
 
 AUTHORIZED_USERS = [
     {'username': 'NemokiaZ', 'id': None},
-    {'username': 'Sylviekia', 'id': None},
+    {'username':'Sylviekia', 'id': None},
     {'username': 'Hasti_moslemi', 'id': None},
 ]
 
@@ -118,12 +118,19 @@ def is_user_authorized(member_id: int, username: str) -> bool:
             return True
     return False
 
+'''@bot.message_handler(content_types=['text'])
+def get_chat_id(message):
+    if message.chat.type in ['group', 'supergroup']:
+        group_id = message.chat.id
+        bot.send_message(message.chat.id, f"شناسه گروه: {group_id}")
+        return'''
+
+
 @bot.message_handler(commands=['start'])
 def show_main_menu(message):
     """Main menu"""
     if message.chat.type in ['group', 'supergroup']:
-        # ارسال پیام به صورت خصوصی
-        bot.send_message(message.from_user.id, 'لطفا درخواست خود را در ربات بگویید')
+        bot.send_message(message.from_user.id, 'لطفا درخواست خود را در ربات بگویید.')
         return
     user_id = message.from_user.id
     username = message.from_user.username
@@ -136,7 +143,7 @@ def show_main_menu(message):
     markup.add('فرشته ها')
 
     bot.send_message(message.chat.id, 'به ربات خوش آمدید! لطفاً از منوی زیر گزینه مورد نظر خود را انتخاب کنید:', reply_markup=markup)
-    
+
 @bot.message_handler(func=lambda message: message.text == 'مدیریت هزینه ها')
 def payments_menu(message):
     """Menu for adding payments."""
@@ -188,14 +195,12 @@ def show_pets_menu(message, pet_id=None, pet=None):
     markup.add('بازگشت')  # دکمه بازگشت به منوی اصلی
 
     bot.send_message(message.from_user.id, 'منوی فرشته ها', reply_markup=markup)  # ارسال پیام به کاربر
-
-
     
 @bot.message_handler(func=lambda message: message.text == 'لیست فرشته ها')
 def list_of_pets_menu(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add('همه فرشته ها')
-    markup.add('بر اساس گونه یا نژاد')
+    markup.add('بر اساس گونه و نژاد')
     markup.add('بازگشت به منو قبلی')  # دکمه بازگشت به منوی اصلی
 
     bot.send_message(message.chat.id, 'منوی لیست فرشته ها', reply_markup=markup)
@@ -253,7 +258,7 @@ def handle_menu(message):
     elif message.text == "همه فرشته ها":
         list_of_pets(message)
 
-    elif message.text == 'بر اساس گونه یا نژاد':
+    elif message.text == 'بر اساس گونه و نژاد':
         choose_filter_option(message)
 
     elif message.text == "❌ حذف حیوان":
@@ -297,19 +302,33 @@ def auto_start_for_old_users(message):
         markup.add('دریافت گزارشات پرداخت', 'مدیریت هزینه ها', 'فرشته ها')
         bot.send_message(message.chat.id, 'به ربات خوش آمدید! لطفاً از منوی زیر گزینه مورد نظر خود را انتخاب کنید:', reply_markup=markup)
 
-
-
 # Remind members for payment if they haven't paid in the last month (by the start of each month)
 def remind_for_payment():
     cursor.execute('SELECT member_id, username, last_payment_date FROM Members')
     members = cursor.fetchall()
-    current_month = datetime.now().strftime('%Y-%m')
+    current_date = datetime.now()
     
     for member in members:
         member_id, username, last_payment_date = member
         if not is_user_authorized(member_id, username):
-            if not last_payment_date or datetime.strptime(last_payment_date, '%Y-%m-%d').strftime('%Y-%m') != current_month:
-                bot.send_message(member_id, f"@{username}, متاسفانه در ماه گذشته مبلغی از طرف شما به گروه اهدا نشده، بی صبرنانه منتظر شما هستیم.")
+            if last_payment_date:
+                last_payment_date = datetime.strptime(last_payment_date, '%Y-%m-%d')
+                months_since_last_payment = (current_date.year - last_payment_date.year) * 12 + (current_date.month - last_payment_date.month)
+
+                if months_since_last_payment >= 2:
+                    # ارسال پیام به کاربر
+                    bot.send_message(member_id, f"⛔️ @{username}، شما 2 ماه متوالی پرداخت نداشتید. لطفاً مبلغ پرداختی خود را به‌روز کنید.")
+                    
+                    # ارسال پیام به ادمین‌ها
+                    for admin in AUTHORIZED_USERS:
+                        if admin['id']:
+                            bot.send_message_by_username(admin['username'], f"⚠️ کاربر @{username} ({member_id}) 2 ماه متوالی پرداخت نداشته است.")
+                elif months_since_last_payment == 1:
+                    bot.send_message(member_id, f"یادآوری: شما در ماه گذشته پرداختی نداشته‌اید. لطفاً مبلغ پرداختی خود را به‌روز کنید.")
+            else:
+                # اگر کاربر هنوز پرداختی نداشته باشد
+                bot.send_message(member_id, "یادآوری: شما هنوز پرداختی نداشته‌اید.")
+
 
 # Detect members leaving the group
 @bot.message_handler(content_types=['left_chat_member'])
@@ -734,10 +753,11 @@ def get_pet_photo(message, pet_id: int, pet_name: str, pet_type: str, pet_age: i
             return
 
         downloaded_file = bot.download_file(file_info.file_path)
-        pet_photo_path = get_unique_file_name(pet_id, pet_name)
+        photo_dir = "photos"
+        os.makedirs(photo_dir, exist_ok=True)
+        pet_photo_path = os.path.join(photo_dir, get_unique_file_name(pet_id, pet_name))
         with open(pet_photo_path, 'wb') as new_file:
             new_file.write(downloaded_file)
-
         save_pet(message, pet_id, pet_name, pet_type, pet_age, pet_breed, pet_description, pet_cost, pet_photo_path)
 
     elif message.text.strip().lower() == 'خیر':
@@ -1267,70 +1287,66 @@ def choose_filter_option(message):
     """نمایش گزینه‌های فیلتر کردن حیوانات بر اساس گونه یا نژاد."""
     markup = types.InlineKeyboardMarkup()
     type_button = types.InlineKeyboardButton("بر اساس گونه", callback_data='view_by_type')
-    breed_button = types.InlineKeyboardButton("بر اساس نژاد", callback_data='view_by_breed')
-    markup.add(type_button, breed_button)
+    markup.add(type_button)
     
-    bot.send_message(message.chat.id, "لطفاً نحوه فیلتر کردن حیوانات را انتخاب کنید:", reply_markup=markup)
+    bot.send_message(message.chat.id, "لطفاً یک گونه را انتخاب کنید:", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data in ['view_by_type', 'view_by_breed'])
-def choose_species_or_breed(call):
-    """نمایش لیست گونه‌ها یا نژادها برای انتخاب فیلتر."""
+@bot.callback_query_handler(func=lambda call: call.data == 'view_by_type')
+def choose_species(call):
+    """نمایش لیست گونه‌ها برای انتخاب."""
+    # حذف دکمه‌های اینلاین پس از کلیک
+    
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    
+    # دریافت تمام گونه‌ها از دیتابیس
+    cursor.execute('SELECT DISTINCT pet_type FROM Pets')
+    species = cursor.fetchall()
+    if species:
+        markup = types.InlineKeyboardMarkup()
+        for species_tuple in species:
+            markup.add(types.InlineKeyboardButton(species_tuple[0], callback_data=f"select_species:{species_tuple[0]}"))
+        bot.send_message(call.message.chat.id, "لطفاً گونه‌ای را انتخاب کنید:", reply_markup=markup)
+    else:
+        bot.send_message(call.message.chat.id, "هیچ گونه‌ای در سیستم موجود نیست.")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('select_species'))
+def choose_breed(call):
+    """نمایش نژادهای ثبت شده برای گونه انتخابی."""
     # حذف دکمه‌های اینلاین پس از کلیک
     bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
     
-    if call.data == 'view_by_type':
-        # دریافت تمام گونه‌ها از دیتابیس
-        cursor.execute('SELECT DISTINCT pet_type FROM Pets')
-        species = cursor.fetchall()
-        if species:
-            markup = types.InlineKeyboardMarkup()
-            for species_tuple in species:
-                markup.add(types.InlineKeyboardButton(species_tuple[0], callback_data=f"filter_by_type:{species_tuple[0]}"))
-            bot.send_message(call.message.chat.id, "لطفاً گونه‌ای را انتخاب کنید:", reply_markup=markup)
-        else:
-            bot.send_message(call.message.chat.id, "هیچ گونه‌ای در سیستم موجود نیست.")
+    species = call.data.split(':')[1]  # استخراج گونه انتخاب شده
+    # دریافت نژادهای مرتبط با گونه انتخاب شده از دیتابیس
+    cursor.execute('SELECT DISTINCT pet_breed FROM Pets WHERE pet_type = ?', (species,))
+    breeds = cursor.fetchall()
     
-    elif call.data == 'view_by_breed':
-        # دریافت تمام نژادها از دیتابیس
-        cursor.execute('SELECT DISTINCT pet_breed FROM Pets')
-        breeds = cursor.fetchall()
-        if breeds:
-            markup = types.InlineKeyboardMarkup()
-            for breed_tuple in breeds:
-                markup.add(types.InlineKeyboardButton(breed_tuple[0], callback_data=f"filter_by_breed:{breed_tuple[0]}"))
-            bot.send_message(call.message.chat.id, "لطفاً نژادی را انتخاب کنید:", reply_markup=markup)
-        else:
-            bot.send_message(call.message.chat.id, "هیچ نژادی در سیستم موجود نیست.")
+    if breeds:
+        markup = types.InlineKeyboardMarkup()
+        for breed_tuple in breeds:
+            markup.add(types.InlineKeyboardButton(breed_tuple[0], callback_data=f"select_breed:{breed_tuple[0]}"))
+        bot.send_message(call.message.chat.id, f"لطفاً یک نژاد از گونه {species} را انتخاب کنید:", reply_markup=markup)
+    else:
+        bot.send_message(call.message.chat.id, f"هیچ نژادی برای گونه {species} یافت نشد.")
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('filter_by_type') or call.data.startswith('filter_by_breed'))
-def show_pets_by_filter(call):
-    """نمایش حیوانات بر اساس فیلتر انتخاب شده."""
-    # حذف دکمه‌های اینلاین پس از انتخاب
+@bot.callback_query_handler(func=lambda call: call.data.startswith('select_breed'))
+def show_pets_by_breed(call):
+    """نمایش حیوانات ثبت شده بر اساس نژاد انتخابی."""
+    # حذف دکمه‌های اینلاین پس از کلیک
     bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
     
-    if call.data.startswith('filter_by_type'):
-        filter_value = call.data.split(':')[1]  # استخراج نوع حیوان
-        cursor.execute('SELECT pet_name, pet_type, pet_age, pet_breed, pet_cost FROM Pets WHERE pet_type = ?', (filter_value,))
-        pets = cursor.fetchall()
-        if pets:
-            report = f"🐶 **حیوانات  بر اساس گونه ({filter_value})**:\n\n"
-            for pet in pets:
-                report += f"نام: {pet[0]}\nسن: {pet[2]} سال\nنژاد: {pet[3]}\nهزینه: {pet[4]:,} تومان\n\n"
-            bot.send_message(call.message.chat.id, report)
-        else:
-            bot.send_message(call.message.chat.id, "هیچ حیوان  با این گونه پیدا نشد.")
+    breed = call.data.split(':')[1]  # استخراج نژاد انتخاب شده
+    # دریافت حیوانات مرتبط با نژاد انتخاب شده از دیتابیس
+    cursor.execute('SELECT pet_name, pet_type, pet_age, pet_breed, pet_cost FROM Pets WHERE pet_breed = ?', (breed,))
+    pets = cursor.fetchall()
+    
+    if pets:
+        report = f"🐾 **حیوانات ثبت شده در نژاد ({breed})**:\n\n"
+        for pet in pets:
+            report += f"نام: {pet[0]}\nگونه: {pet[1]}\nسن: {pet[2]} سال\nهزینه: {pet[4]:,} تومان\n\n"
+        bot.send_message(call.message.chat.id, report)
+    else:
+        bot.send_message(call.message.chat.id, f"هیچ حیوانی در نژاد {breed} یافت نشد.")
 
-    elif call.data.startswith('filter_by_breed'):
-        filter_value = call.data.split(':')[1]  # استخراج نژاد حیوان
-        cursor.execute('SELECT pet_name, pet_type, pet_age, pet_breed, pet_cost FROM Pets WHERE pet_breed = ?', (filter_value,))
-        pets = cursor.fetchall()
-        if pets:
-            report = f"🐱 **حیوانات  بر اساس نژاد ({filter_value})**:\n\n"
-            for pet in pets:
-                report += f"نام: {pet[0]}\nگونه: {pet[1]}\nسن: {pet[2]} سال\nهزینه: {pet[4]:,} تومان\n\n"
-            bot.send_message(call.message.chat.id, report)
-        else:
-            bot.send_message(call.message.chat.id, "هیچ حیوان  با این نژاد پیدا نشد.")
 
 # Polling
 while True: 
